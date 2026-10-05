@@ -1,5 +1,5 @@
 /* ==========================================================================
-   Latent — page choreography
+   Latent v2 — page choreography
    ========================================================================== */
 (function () {
   'use strict';
@@ -8,38 +8,55 @@
   var reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   var $ = function (s, c) { return (c || document).querySelector(s); };
   var $$ = function (s, c) { return Array.prototype.slice.call((c || document).querySelectorAll(s)); };
+  var loader = $('.loader');
 
-  // Clocks run even if the animation libraries fail to load.
-  function startClocks() {
+  // ------------------------------------------------------------ clocks
+  (function clocks() {
     var els = $$('[data-clock]');
     function update() {
       els.forEach(function (el) {
         try {
-          el.textContent = new Intl.DateTimeFormat('en-GB', {
-            timeZone: el.getAttribute('data-clock'), hour: '2-digit', minute: '2-digit'
-          }).format(new Date());
+          el.textContent = new Intl.DateTimeFormat('en-GB', { timeZone: el.getAttribute('data-clock'), hour: '2-digit', minute: '2-digit' }).format(new Date());
         } catch (e) { /* ignore */ }
       });
     }
     update();
     setInterval(update, 20000);
+  })();
+
+  // ------------------------------------------------------------ word splitting
+  function splitWords(el) {
+    var words = el.textContent.trim().split(/\s+/);
+    el.textContent = '';
+    words.forEach(function (w, i) {
+      var wr = document.createElement('span'); wr.className = 'wr';
+      var wi = document.createElement('span'); wi.className = 'wi'; wi.textContent = w;
+      wi.style.transitionDelay = (i * 0.045).toFixed(3) + 's';
+      wr.appendChild(wi); el.appendChild(wr);
+      if (i < words.length - 1) el.appendChild(document.createTextNode(' '));
+    });
   }
-  startClocks();
+  $$('[data-reveal]').forEach(splitWords);
 
   if (!window.gsap || !window.ScrollTrigger) {
     root.classList.remove('intro');
+    root.classList.remove('loading');
     root.classList.add('no-gl');
+    $$('[data-reveal]').forEach(function (el) { el.classList.add('is-in'); });
+    if (loader) loader.remove();
     return;
   }
   gsap.registerPlugin(ScrollTrigger);
 
   // ------------------------------------------------------------ smooth scroll
   var lenis = null;
+  var scene = null;
   if (!reduced && window.Lenis) {
-    lenis = new Lenis({ duration: 1.15, smoothWheel: true });
+    lenis = new Lenis({ duration: 1.25, smoothWheel: true, wheelMultiplier: 0.9 });
     lenis.on('scroll', ScrollTrigger.update);
     gsap.ticker.add(function (t) { lenis.raf(t * 1000); });
     gsap.ticker.lagSmoothing(0);
+    lenis.stop();
   }
 
   $$('[data-scroll]').forEach(function (a) {
@@ -48,113 +65,120 @@
       var el = id && id.length > 1 ? $(id) : null;
       if (!el && id !== '#top') return;
       e.preventDefault();
-      var dest = id === '#top' ? 0 : el;
-      if (lenis) lenis.scrollTo(dest, { duration: 1.6 });
-      else window.scrollTo({ top: dest === 0 ? 0 : el.getBoundingClientRect().top + window.scrollY, behavior: reduced ? 'auto' : 'smooth' });
+      if (lenis) lenis.scrollTo(id === '#top' ? 0 : el, { duration: 1.8 });
+      else window.scrollTo({ top: id === '#top' ? 0 : el.getBoundingClientRect().top + window.scrollY, behavior: reduced ? 'auto' : 'smooth' });
     });
   });
 
-  // ------------------------------------------------------------ nav behaviour
+  // ------------------------------------------------------------ nav
   var nav = $('.nav');
   var lastY = 0;
-  function onScrollNav() {
+  window.addEventListener('scroll', function () {
     var y = window.scrollY;
     nav.classList.toggle('is-solid', y > 40);
-    if (y > lastY + 4 && y > 240) nav.classList.add('is-hidden');
+    if (y > lastY + 4 && y > 260) nav.classList.add('is-hidden');
     else if (y < lastY - 4) nav.classList.remove('is-hidden');
     lastY = y;
-  }
-  window.addEventListener('scroll', onScrollNav, { passive: true });
+  }, { passive: true });
 
-  // ------------------------------------------------------------ statement words
+  // ------------------------------------------------------------ cursor
+  var cursor = $('.cursor');
+  var pointerY = -1;
+  if (cursor && !reduced && window.matchMedia('(hover: hover) and (pointer: fine)').matches) {
+    root.classList.add('has-cursor');
+    var dot = $('.cursor-dot'), ring = $('.cursor-ring');
+    var mx = -100, my = -100, rx = -100, ry = -100;
+    window.addEventListener('pointermove', function (e) {
+      mx = e.clientX; my = e.clientY; pointerY = my;
+      dot.style.transform = 'translate3d(' + mx + 'px,' + my + 'px,0)';
+    }, { passive: true });
+    document.addEventListener('mouseover', function (e) {
+      cursor.classList.toggle('is-link', !!(e.target.closest && e.target.closest('a, button')));
+    });
+    gsap.ticker.add(function () {
+      rx += (mx - rx) * 0.16; ry += (my - ry) * 0.16;
+      ring.style.transform = 'translate3d(' + rx.toFixed(1) + 'px,' + ry.toFixed(1) + 'px,0)';
+    });
+  }
+
+  // ------------------------------------------------------------ reveals
+  $$('[data-reveal]').forEach(function (el) {
+    if (el.getAttribute('data-reveal') === 'intro') return;
+    ScrollTrigger.create({ trigger: el, start: 'top 88%', once: true, onEnter: function () { el.classList.add('is-in'); } });
+  });
+
   var statement = $('[data-words]');
   if (statement) {
     var words = statement.textContent.trim().split(/\s+/);
     statement.textContent = '';
     words.forEach(function (w, i) {
-      var s = document.createElement('span');
-      s.className = 'w';
-      s.textContent = w;
+      var s = document.createElement('span'); s.className = 'w'; s.textContent = w;
       statement.appendChild(s);
       if (i < words.length - 1) statement.appendChild(document.createTextNode(' '));
     });
-    gsap.fromTo($$('.w', statement), { opacity: 0.14 }, {
-      opacity: 1, ease: 'none', stagger: 0.06,
-      scrollTrigger: { trigger: statement, start: 'top 78%', end: 'bottom 42%', scrub: reduced ? false : 0.6 }
+    gsap.fromTo($$('.w', statement), { opacity: 0.12, color: '#39FF14' }, {
+      opacity: 1, color: '#EAFFE4', ease: 'none', stagger: 0.06,
+      scrollTrigger: { trigger: statement, start: 'top 80%', end: 'bottom 45%', scrub: reduced ? false : 0.8 }
     });
   }
 
-  // ------------------------------------------------------------ work: horizontal on desktop
+  // ------------------------------------------------------------ work (horizontal on desktop)
   var workST = null;
-  var mm = gsap.matchMedia();
-  mm.add('(min-width: 900px)', function () {
+  gsap.matchMedia().add('(min-width: 900px)', function () {
     var track = $('.work-track');
     var bar = $('.work-progress i');
     var dist = function () { return Math.max(0, track.scrollWidth - window.innerWidth); };
-    var tween = gsap.to(track, {
-      x: function () { return -dist(); },
-      ease: 'none',
+    var tw = gsap.to(track, {
+      x: function () { return -dist(); }, ease: 'none',
       scrollTrigger: {
-        id: 'work',
-        trigger: '.work',
-        start: 'top top',
-        end: function () { return '+=' + dist(); },
-        pin: true,
-        scrub: reduced ? true : 0.8,
-        invalidateOnRefresh: true,
+        id: 'work', trigger: '.work', start: 'top top', end: function () { return '+=' + dist(); },
+        pin: true, scrub: reduced ? true : 1, invalidateOnRefresh: true,
         onUpdate: function (self) { if (bar) bar.style.transform = 'scaleX(' + self.progress.toFixed(4) + ')'; }
       }
     });
-    workST = tween.scrollTrigger;
+    workST = tw.scrollTrigger;
     return function () { workST = null; };
   });
 
   // ------------------------------------------------------------ process steps
-  $$('.step').forEach(function (step) {
+  var stageNum = $('#stage-num'), stageBar = $('#stage-bar');
+  $$('.step').forEach(function (step, i) {
     ScrollTrigger.create({
       trigger: step, start: 'top 58%', end: 'bottom 42%',
-      toggleClass: { targets: step, className: 'is-active' }
+      onToggle: function (self) {
+        step.classList.toggle('is-active', self.isActive);
+        if (self.isActive) {
+          if (stageNum) stageNum.textContent = '0' + (i + 1);
+          if (stageBar) stageBar.style.transform = 'scaleX(' + ((i + 1) / 4) + ')';
+        }
+      }
     });
   });
 
-  // ------------------------------------------------------------ contact turns Klein
+  // ------------------------------------------------------------ scene states
   var cta = $('.cta');
-  gsap.fromTo('.backdrop', { opacity: 0 }, {
-    opacity: 1, ease: 'none',
-    scrollTrigger: { trigger: cta, start: 'top 92%', end: 'top 38%', scrub: true }
-  });
-  ScrollTrigger.create({
-    trigger: cta, start: 'top 60%', end: 'bottom top',
-    onToggle: function (self) { document.body.classList.toggle('on-klein', self.isActive); }
-  });
-
-  // ------------------------------------------------------------ particles
   var canvas = $('#gl');
-  var scene = null;
   var keys = [];
 
-  var P0 = 0.85; // noise at the first process step = 100%
   function stateSet() {
     var m = window.innerWidth < 760;
     var t = window.innerWidth < 1100;
-    // visible world width at z = 0 (camera: fov 35, z 9 => visible height 5.67)
-    var visW = 5.675 * (window.innerWidth / window.innerHeight);
-    var fitAmp = Math.min(0.7, (visW * 0.8) / 3.5);
-    var fitRing = Math.min(0.55, (visW * 0.86) / 4.1);
-    var proc = function (n) {
-      return m ? { shape: 2, noise: n * 0.8, x: 0, y: 0.24, scale: 0.55, opacity: 0.3, white: 0, spin: 1 }
-               : { shape: 2, noise: n, x: 0.245, y: 0.02, scale: t ? 0.85 : 1, opacity: 1, white: 0, spin: 1 };
-    };
+    var S = function (o) { return Object.assign({ shape: 0, amp: 0.05, x: 0, y: 0, scale: 1, visible: 1, bg: 1, tilt: 0.2, spin: 1 }, o); };
+    var px = m ? 0 : 0.245, py = m ? 0.24 : 0.07, ps = m ? 0.48 : (t ? 0.82 : 0.95), pv = m ? 0.55 : 1;
     return {
-      hero: m ? { shape: 0, noise: 0, x: 0, y: 0.15, scale: fitAmp, opacity: 1, white: 0, spin: 0 }
-              : { shape: 0, noise: 0, x: t ? 0.215 : 0.235, y: 0.11, scale: t ? 0.84 : 0.95, opacity: 1, white: 0, spin: 0 },
-      studio: m ? { shape: 1, noise: 0, x: 0, y: -0.36, scale: 0.55, opacity: 0.42, white: 0, spin: 0 }
-                : { shape: 1, noise: 0, x: 0, y: -0.33, scale: 1, opacity: 0.7, white: 0, spin: 0 },
-      make: { shape: 1, noise: 0.25, x: 0, y: -0.62, scale: 1, opacity: 0.16, white: 0, spin: 0 },
-      work: { shape: 2, noise: 1.4, x: 0, y: 0, scale: m ? 0.7 : 1.35, opacity: 0.16, white: 0, spin: 1 },
-      p: [proc(P0), proc(0.42), proc(0.16), proc(0)],
-      cta: m ? { shape: 3, noise: 0, x: 0, y: 0.385, scale: fitRing, opacity: 1, white: 1, spin: 1 }
-             : { shape: 3, noise: 0, x: 0.265, y: 0.16, scale: t ? 0.78 : 0.92, opacity: 1, white: 1, spin: 1 }
+      hero: m ? S({ shape: 0, amp: 0.34, y: 0.17, scale: 0.6 }) : S({ shape: 0, amp: 0.34, x: t ? 0.2 : 0.215, y: 0.06, scale: t ? 0.88 : 1.02 }),
+      studio: m ? S({ shape: 1, amp: 0.06, y: -0.27, scale: 0.46, visible: 1, bg: 0.7, tilt: 0.35 })
+                : S({ shape: 1, amp: 0.06, x: 0.26, y: 0.0, scale: t ? 0.8 : 0.92, bg: 0.75, tilt: 0.35 }),
+      make: S({ shape: 2, amp: 0.05, x: m ? 0 : 0.32, y: m ? 0.3 : 0.1, scale: m ? 0.45 : 0.7, visible: 0, bg: 0.4, tilt: 0.9, spin: 0.6 }),
+      work: S({ shape: 0, amp: 0.2, scale: 0.8, visible: 0, bg: 0.75, tilt: 0.2, spin: 0.6 }),
+      p: [
+        S({ shape: 0, amp: 0.62, x: px, y: py, scale: ps, visible: pv, bg: 0.55, tilt: 0.2 }),
+        S({ shape: 1, amp: 0.1, x: px, y: py, scale: ps, visible: pv, bg: 0.55, tilt: 0.35 }),
+        S({ shape: 2, amp: 0.05, x: px, y: py, scale: ps, visible: pv, bg: 0.55, tilt: 0.5 }),
+        S({ shape: 3, amp: 0.0, x: px, y: py, scale: ps * 1.05, visible: pv, bg: 0.55, tilt: 0.55 })
+      ],
+      cta: m ? S({ shape: 2, amp: 0.04, y: 0.3, scale: 0.42, bg: 0.3, tilt: 0.55, spin: 0.8 })
+             : S({ shape: 2, amp: 0.04, x: 0.33, y: 0.17, scale: t ? 0.66 : 0.74, bg: 0.3, tilt: 0.55, spin: 0.8 })
     };
   }
 
@@ -168,22 +192,12 @@
     var list = [{ y: 0, s: S.hero }];
     list.push({ y: centerY($('.statement-text')), s: S.studio });
     list.push({ y: centerY($('.make')), s: S.make });
-    if (workST) {
-      list.push({ y: workST.start, s: S.work });
-      list.push({ y: workST.end, s: S.work });
-    } else {
-      list.push({ y: docY(work), s: S.work });
-      list.push({ y: docY(work) + work.offsetHeight - window.innerHeight, s: S.work });
-    }
+    if (workST) { list.push({ y: workST.start, s: S.work }); list.push({ y: workST.end, s: S.work }); }
+    else { list.push({ y: docY(work), s: S.work }); list.push({ y: docY(work) + work.offsetHeight - window.innerHeight, s: S.work }); }
     $$('.step').forEach(function (el, i) { list.push({ y: centerY(el), s: S.p[i] }); });
     var ctaY = Math.min(docY(cta), max);
     list.push({ y: ctaY, s: S.cta });
-    // past this point the halo travels with the content instead of staying fixed
-    if (max - ctaY > 2) {
-      var end = Object.assign({}, S.cta, { y: S.cta.y + (max - ctaY) / window.innerHeight });
-      list.push({ y: max, s: end, lin: true });
-    }
-    // keep keys strictly increasing
+    if (max - ctaY > 2) list.push({ y: max, s: Object.assign({}, S.cta, { y: S.cta.y + (max - ctaY) / window.innerHeight }), lin: true });
     keys = [];
     list.forEach(function (k) {
       var y = Math.max(0, Math.min(k.y, max));
@@ -192,8 +206,7 @@
     });
   }
 
-  function smooth(t) { t = Math.min(1, Math.max(0, (t - 0.18) / 0.64)); return t * t * (3 - 2 * t); }
-
+  function ease(t) { t = Math.min(1, Math.max(0, (t - 0.15) / 0.7)); return t * t * (3 - 2 * t); }
   function sample(y) {
     if (!keys.length) return null;
     if (y <= keys[0].y) return keys[0].s;
@@ -201,7 +214,7 @@
       var a = keys[i], b = keys[i + 1];
       if (y < b.y) {
         var r = (y - a.y) / (b.y - a.y);
-        var t = b.lin ? r : smooth(r);
+        var t = b.lin ? r : ease(r);
         var o = {};
         for (var k in a.s) o[k] = a.s[k] + (b.s[k] - a.s[k]) * t;
         return o;
@@ -210,102 +223,92 @@
     return keys[keys.length - 1].s;
   }
 
-  function readTheme() {
-    var cs = getComputedStyle(root);
-    return {
-      ink: cs.getPropertyValue('--particle-ink').trim() || '#17181B',
-      accent: cs.getPropertyValue('--particle-accent').trim() || '#1E3FE0',
-      blend: cs.getPropertyValue('--particle-blend').trim() || 'normal'
-    };
-  }
-
-  var stepNum = $('#step-num');
-  var stepBar = $('#step-bar');
-  var noiseVal = $('#noise-val');
-  var lastNoiseText = '';
-
-  function setStep(progress) {
-    var n = Math.round(progress * 50);
-    if (stepNum) stepNum.textContent = n;
-    if (stepBar) stepBar.style.transform = 'scaleX(' + progress.toFixed(3) + ')';
-  }
-
-  function runIntro() {
-    var lines = $$('.hero-line > span');
-    var fades = $$('.hero-fade');
-    var START = 2.4;
-
-    if (reduced || !scene) {
-      root.classList.remove('intro');
-      if (scene) scene.setLoadNoise(0);
-      setStep(1);
-      return;
-    }
-
-    gsap.set(lines, { yPercent: 108 });
-    gsap.set(fades, { opacity: 0 });
-    root.classList.remove('intro');
-
-    var load = { n: START };
-    scene.setLoadNoise(START);
-    var tl = gsap.timeline({ delay: 0.15 });
-    tl.to(load, {
-      n: 0, duration: 3.1, ease: 'power3.inOut',
-      onUpdate: function () { scene.setLoadNoise(load.n); setStep(1 - load.n / START); }
-    }, 0);
-    tl.to(lines, { yPercent: 0, duration: 1.3, ease: 'expo.out', stagger: 0.11 }, 1.35);
-    tl.to(fades, { opacity: 1, duration: 1, ease: 'power2.out', stagger: 0.12 }, 2.0);
-  }
-
+  // ------------------------------------------------------------ init scene
+  var prevY = window.scrollY;
   function initScene() {
-    var small = window.innerWidth < 760;
-    scene = window.LatentScene ? window.LatentScene.create(canvas, {
-      count: small ? 9000 : 17000,
-      family: '"Bodoni Moda", "Bodoni 72", Didot, "Bodoni MT", Georgia, serif',
-      reduced: reduced
-    }) : null;
-
-    if (!scene) {
-      canvas.style.display = 'none';
-      root.classList.add('no-gl');
-      return;
-    }
-
-    scene.setTheme(readTheme());
-    var applyTheme = function () { scene.setTheme(readTheme()); };
-    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applyTheme);
-    new MutationObserver(applyTheme).observe(root, { attributes: true, attributeFilter: ['data-theme', 'class'] });
+    scene = window.LatentScene ? window.LatentScene.create(canvas, { reduced: reduced }) : null;
+    if (!scene) { canvas.style.display = 'none'; root.classList.add('no-gl'); return; }
 
     buildKeys();
-    var first = sample(window.scrollY) || stateSet().hero;
-    scene.jump(Object.assign({}, first, { opacity: 0 }));
-    scene.setTarget(first);
+    scene.jump(sample(window.scrollY) || stateSet().hero);
+    scene.setIntroFill(reduced ? -0.2 : 1.25);
+    scene.setIntroScale(reduced ? 1 : 0.001);
 
-    scene.onFrame(function () {
-      var s = sample(window.scrollY);
+    scene.onFrame(function (dt) {
+      var y = window.scrollY;
+      // scroll speed in px/s (clamped so programmatic jumps don't explode the liquid)
+      if (dt > 0) scene.setVelocity(Math.max(-6000, Math.min(6000, (y - prevY) / dt)));
+      prevY = y;
+      var s = sample(y);
       if (s) scene.setTarget(s);
-      if (noiseVal) {
-        var txt = String(Math.round(Math.min(1, Math.max(0, scene.current.noise / P0)) * 100));
-        if (txt !== lastNoiseText) { noiseVal.textContent = txt; lastNoiseText = txt; }
-      }
+      scene.setShift(-(y / window.innerHeight) * 0.42);
+      var top = cta.getBoundingClientRect().top;
+      scene.setCtaFill(1 - top / window.innerHeight);
+      document.body.classList.toggle('on-neon', top < 64);
+      if (cursor) cursor.classList.toggle('is-dark', pointerY > top + 6);
     });
-
     ScrollTrigger.addEventListener('refresh', buildKeys);
   }
 
-  // Wait (briefly) for Bodoni so the ampersand is sampled from the real glyph.
+  // ------------------------------------------------------------ loader → liquid drain → hero
+  var loadNum = $('#load-num');
   function fontsReady() {
     if (!document.fonts || !document.fonts.load) return Promise.resolve();
-    var timeout = new Promise(function (r) { setTimeout(r, 2200); });
-    var load = document.fonts.load('italic 400 200px "Bodoni Moda"').then(function () { return document.fonts.ready; });
-    return Promise.race([load, timeout]);
+    var timeout = new Promise(function (r) { setTimeout(r, 2500); });
+    return Promise.race([Promise.all([document.fonts.load('500 64px "Unbounded"'), document.fonts.load('400 16px "Geist"')]).then(function () { return document.fonts.ready; }), timeout]);
+  }
+  var counter = { v: 0 };
+  var counting = new Promise(function (resolve) {
+    gsap.to(counter, {
+      v: 100, duration: reduced ? 0.01 : 1.3, ease: 'power2.inOut',
+      onUpdate: function () { if (loadNum) loadNum.textContent = String(Math.round(counter.v)).padStart(3, '0'); },
+      onComplete: resolve
+    });
+  });
+
+  function revealHero() {
+    root.classList.remove('intro');
+    root.classList.remove('loading');
+    var h = $('[data-reveal="intro"]');
+    if (h) h.classList.add('is-in');
   }
 
-  fontsReady().then(function () {
+  function finishIntro() {
+    if (loader) loader.remove();
+    if (lenis) lenis.start();
+    ScrollTrigger.refresh();
+  }
+
+  function runIntro() {
+    var fades = $$('.hero-fade');
+    if (reduced || !scene) {
+      revealHero();
+      gsap.set(fades, { opacity: 1 });
+      finishIntro();
+      return;
+    }
+    gsap.set(fades, { opacity: 0 });
+    // let the canvas paint the full neon frame before the loader goes transparent
+    requestAnimationFrame(function () {
+      requestAnimationFrame(function () {
+        loader.classList.add('is-clear');
+        var st = { fill: 1.25, scale: 0.001 };
+        var tl = gsap.timeline({ onComplete: finishIntro });
+        tl.to('.loader-inner', { opacity: 0, y: -16, duration: 0.45, ease: 'power2.in' }, 0)
+          .to(st, { fill: -0.2, duration: 1.9, ease: 'power3.inOut', onUpdate: function () { scene.setIntroFill(st.fill); } }, 0.15)
+          .to(st, { scale: 1, duration: 2.0, ease: 'expo.out', onUpdate: function () { scene.setIntroScale(st.scale); } }, 0.7)
+          .add(revealHero, 1.05)
+          .to(fades, { opacity: 1, duration: 1.1, ease: 'power2.out', stagger: 0.1 }, 1.45);
+        root.classList.remove('intro');
+        gsap.set(fades, { opacity: 0 });
+      });
+    });
+  }
+
+  Promise.all([fontsReady(), counting]).then(function () {
     initScene();
     ScrollTrigger.refresh();
     runIntro();
   });
-
   window.addEventListener('load', function () { ScrollTrigger.refresh(); });
 })();
